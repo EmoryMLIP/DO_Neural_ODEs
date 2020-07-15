@@ -2,7 +2,6 @@ import six
 import math
 
 import lib.layers.wrappers.cnf_regularization as reg_lib
-import lib.spectral_norm as spectral_norm
 import lib.layers as layers
 from lib.layers.odefunc import divergence_bf, divergence_approx
 
@@ -31,6 +30,13 @@ def set_cnf_options(args, model):
             module.test_solver = args.test_solver if args.test_solver else args.solver
             module.test_atol = args.test_atol if args.test_atol else args.atol
             module.test_rtol = args.test_rtol if args.test_rtol else args.rtol
+            # if hasattr(args, 'test_step_size'):
+            #     if args.test_step_size is not None:
+            #         module.test_solver_options['step_size'] = args.test_step_size
+            if hasattr(args, 'test_step_size') and args.test_step_size is not None:
+                module.test_solver_options['step_size'] = args.test_step_size
+            else:
+                module.test_solver_options['step_size'] = args.step_size # if no separate test_step_size, use the same
 
         if isinstance(module, layers.ODEfunc):
             module.rademacher = args.rademacher
@@ -59,7 +65,7 @@ def count_nfe(model):
             self.num_evals = 0
 
         def __call__(self, module):
-            if isinstance(module, layers.ODEfunc):
+            if isinstance(module, layers.CNF):
                 self.num_evals += module.num_evals()
 
     accumulator = AccNumEvals()
@@ -87,31 +93,6 @@ def count_total_time(model):
     return accumulator.total_time
 
 
-def add_spectral_norm(model, logger=None):
-    """Applies spectral norm to all modules within the scope of a CNF."""
-
-    def apply_spectral_norm(module):
-        if 'weight' in module._parameters:
-            if logger: logger.info("Adding spectral norm to {}".format(module))
-            spectral_norm.inplace_spectral_norm(module, 'weight')
-
-    def find_cnf(module):
-        if isinstance(module, layers.CNF):
-            module.apply(apply_spectral_norm)
-        else:
-            for child in module.children():
-                find_cnf(child)
-
-    find_cnf(model)
-
-
-def spectral_norm_power_iteration(model, n_power_iterations=1):
-
-    def recursive_power_iteration(module):
-        if hasattr(module, spectral_norm.POWER_ITERATION_FN):
-            getattr(module, spectral_norm.POWER_ITERATION_FN)(n_power_iterations)
-
-    model.apply(recursive_power_iteration)
 
 
 REGULARIZATION_FNS = {
@@ -157,7 +138,7 @@ def get_regularization(model, regularization_coeffs):
     return acc_reg_states
 
 
-def build_model_tabular(args, dims, regularization_fns=None):
+def build_model_tabular(args, dims, regularization_fns=None): # IMPORTANT
 
     hidden_dims = tuple(map(int, args.dims.split("-")))
 

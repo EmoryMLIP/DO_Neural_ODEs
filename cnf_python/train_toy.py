@@ -1,5 +1,11 @@
-import matplotlib
-matplotlib.use('Agg')
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+except:
+    import matplotlib
+    matplotlib.use('agg') # for linux server with no tkinter
+    import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 
 import argparse
@@ -16,17 +22,16 @@ import lib.layers.odefunc as odefunc
 
 from train_misc import standard_normal_logprob
 from train_misc import set_cnf_options, count_nfe, count_parameters, count_total_time
-from train_misc import add_spectral_norm, spectral_norm_power_iteration
 from train_misc import create_regularization_fns, get_regularization, append_regularization_to_log
 from train_misc import build_model_tabular
 
 from diagnostics.viz_toy import save_trajectory, trajectory_to_video
 
-SOLVERS = ["dopri5", "bdf", "rk4", "midpoint", 'adams', 'explicit_adams', 'fixed_adams']
+SOLVERS = ["dopri5", "bdf", "rk4", "midpoint", 'adams', 'explicit_adams', 'fixed_adams', 'do']
 parser = argparse.ArgumentParser('Continuous Normalizing Flow')
 parser.add_argument(
     '--data', choices=['swissroll', '8gaussians', 'pinwheel', 'circles', 'moons', '2spirals', 'checkerboard', 'rings'],
-    type=str, default='pinwheel'
+    type=str, default='8gaussians'
 )
 parser.add_argument(
     "--layer_type", type=str, default="concatsquash",
@@ -39,7 +44,7 @@ parser.add_argument('--train_T', type=eval, default=True)
 parser.add_argument("--divergence_fn", type=str, default="brute_force", choices=["brute_force", "approximate"])
 parser.add_argument("--nonlinearity", type=str, default="tanh", choices=odefunc.NONLINEARITIES)
 
-parser.add_argument('--solver', type=str, default='dopri5', choices=SOLVERS)
+parser.add_argument('--solver', type=str, default='rk4', choices=SOLVERS) # default='dopri5'
 parser.add_argument('--atol', type=float, default=1e-5)
 parser.add_argument('--rtol', type=float, default=1e-5)
 parser.add_argument("--step_size", type=float, default=None, help="Optional fixed step size.")
@@ -50,7 +55,6 @@ parser.add_argument('--test_rtol', type=float, default=None)
 
 parser.add_argument('--residual', type=eval, default=False, choices=[True, False])
 parser.add_argument('--rademacher', type=eval, default=False, choices=[True, False])
-parser.add_argument('--spectral_norm', type=eval, default=False, choices=[True, False])
 parser.add_argument('--batch_norm', type=eval, default=False, choices=[True, False])
 parser.add_argument('--bn_lag', type=float, default=0)
 
@@ -68,7 +72,7 @@ parser.add_argument('--JFrobint', type=float, default=None, help="int_t ||df/dx|
 parser.add_argument('--JdiagFrobint', type=float, default=None, help="int_t ||df_i/dx_i||_F")
 parser.add_argument('--JoffdiagFrobint', type=float, default=None, help="int_t ||df/dx - df_i/dx_i||_F")
 
-parser.add_argument('--save', type=str, default='experiments/cnf')
+parser.add_argument('--save', type=str, default='experiments/cnf/toy')
 parser.add_argument('--viz_freq', type=int, default=100)
 parser.add_argument('--val_freq', type=int, default=100)
 parser.add_argument('--log_freq', type=int, default=10)
@@ -128,7 +132,6 @@ if __name__ == '__main__':
 
     regularization_fns, regularization_coeffs = create_regularization_fns(args)
     model = build_model_tabular(args, 2, regularization_fns).to(device)
-    if args.spectral_norm: add_spectral_norm(model)
     set_cnf_options(args, model)
 
     logger.info(model)
@@ -144,10 +147,10 @@ if __name__ == '__main__':
 
     end = time.time()
     best_loss = float('inf')
+
     model.train()
     for itr in range(1, args.niters + 1):
         optimizer.zero_grad()
-        if args.spectral_norm: spectral_norm_power_iteration(model, 1)
 
         loss = compute_loss(args, model)
         loss_meter.update(loss.item())
@@ -174,10 +177,10 @@ if __name__ == '__main__':
         tt_meter.update(total_time)
 
         log_message = (
-            'Iter {:04d} | Time {:.4f}({:.4f}) | Loss {:.6f}({:.6f}) | NFE Forward {:.0f}({:.1f})'
-            ' | NFE Backward {:.0f}({:.1f}) | CNF Time {:.4f}({:.4f})'.format(
-                itr, time_meter.val, time_meter.avg, loss_meter.val, loss_meter.avg, nfef_meter.val, nfef_meter.avg,
-                nfeb_meter.val, nfeb_meter.avg, tt_meter.val, tt_meter.avg
+            'Iter {:04d} | Time {:.4f}({:.2f}) | Loss {:.6f}({:.6f}) | NFE Forward {:.0f}({:.1f})'
+            ' | NFE Backward {:.0f}({:.1f}) | CNF Time {:.2f}({:.2f})'.format(
+                itr, time_meter.val, time_meter.sum, loss_meter.val, loss_meter.avg, nfef_meter.val, nfef_meter.sum,
+                nfeb_meter.val, nfeb_meter.sum, tt_meter.val, tt_meter.avg
             )
         )
         if len(regularization_coeffs) > 0:
@@ -224,8 +227,4 @@ if __name__ == '__main__':
 
     logger.info('Training has finished.')
 
-    save_traj_dir = os.path.join(args.save, 'trajectory')
-    logger.info('Plotting trajectory to {}'.format(save_traj_dir))
-    data_samples = toy_data.inf_train_gen(args.data, batch_size=2000)
-    save_trajectory(model, data_samples, save_traj_dir, device=device)
-    trajectory_to_video(save_traj_dir)
+
