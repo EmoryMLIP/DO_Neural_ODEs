@@ -50,6 +50,9 @@ To run other models, download the preprocessed data from Papamakarios's MAF pape
 
 #### Time-Series Julia Setup:
 
+![](https://imgur.com/nWxwVoe.gif)
+
+
 ```
 # start up julia, may need to adjust the path
 exec '/Applications/Julia-1.2.app/Contents/Resources/julia/bin/julia'
